@@ -33,6 +33,7 @@ def main(args):
     elif args.oasis_ckpt.endswith(".safetensors"):
         load_model(model, args.oasis_ckpt)
     model = model.to(device).eval()
+    model = torch.compile(model, mode='reduce-overhead')
 
     # load VAE checkpoint
     vae = VAE_models["vit-l-20-shallow-encoder"]()
@@ -106,9 +107,14 @@ def main(args):
             t_next = t_next[:, start_frame:]
 
             # get model predictions
-            with torch.no_grad():
-                with autocast("cuda", dtype=torch.half):
+            while True:
+              import time
+              start = time.time()
+              with torch.no_grad():
+                  with autocast("cuda", dtype=torch.half):
                     v = model(x_curr, t, actions[:, start_frame : i + 1])
+              torch.cuda.synchronize()
+              print('step', (time.time() - start) * 1000)
 
             x_start = alphas_cumprod[t].sqrt() * x_curr - (1 - alphas_cumprod[t]).sqrt() * v
             x_noise = ((1 / alphas_cumprod[t]).sqrt() * x_curr - x_start) / (1 / alphas_cumprod[t] - 1).sqrt()
